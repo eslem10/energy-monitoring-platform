@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "Smart House Energy",
+    "slug": "smart-house-energy",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": ["**/*"],
+    "android": {
+      "package": "com.smarthouse.energy"
+    },
+    "ios": {
+      "supportsTablet": true
+    }
+  }
+}
