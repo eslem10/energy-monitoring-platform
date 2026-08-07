@@ -125,13 +125,21 @@ async function getLatestPower({ includeTotal = true, device } = {}) {
 }
 
 async function getHistory({ minutes = 60, includeTotal = true, device } = {}) {
+  let every = "30s";
+  if (minutes > 1440) {
+    every = "15m";
+  }
+  if (minutes > 10000) {
+    every = "1h";
+  }
+
   const rows = await runFlux(`
     from(bucket: "${config.influx.bucket}")
       |> range(start: -${minutes}m)
       |> filter(fn: (r) => r._measurement == "energy")
       |> filter(fn: (r) => r._field == "power")
       |> filter(fn: (r) => ${deviceFilter({ includeTotal, device })})
-      |> aggregateWindow(every: 30s, fn: mean, createEmpty: false)
+      |> aggregateWindow(every: ${every}, fn: mean, createEmpty: false)
       |> keep(columns: ["_time", "_value", "device"])
   `);
 
@@ -149,11 +157,47 @@ async function getSummary() {
     .filter((item) => item.device !== "total")
     .reduce((sum, item) => sum + item.power, 0);
 
+  // Get energy consumed in last 24h vs previous 24h
+  let todayEnergyWh = 0;
+  let yesterdayEnergyWh = 0;
+
+  try {
+    const [todayRows, yesterdayRows] = await Promise.all([
+      runFlux(`
+        from(bucket: "${config.influx.bucket}")
+          |> range(start: -24h)
+          |> filter(fn: (r) => r._measurement == "energy")
+          |> filter(fn: (r) => r._field == "power")
+          |> filter(fn: (r) => r.device != "total")
+          |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
+          |> map(fn: (r) => ({ r with _value: r._value / 12.0 }))
+          |> sum()
+      `),
+      runFlux(`
+        from(bucket: "${config.influx.bucket}")
+          |> range(start: -48h, stop: -24h)
+          |> filter(fn: (r) => r._measurement == "energy")
+          |> filter(fn: (r) => r._field == "power")
+          |> filter(fn: (r) => r.device != "total")
+          |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
+          |> map(fn: (r) => ({ r with _value: r._value / 12.0 }))
+          |> sum()
+      `)
+    ]);
+
+    todayEnergyWh = todayRows.reduce((sum, r) => sum + (r._value || 0), 0);
+    yesterdayEnergyWh = yesterdayRows.reduce((sum, r) => sum + (r._value || 0), 0);
+  } catch (err) {
+    console.error("Error querying comparison energy:", err);
+  }
+
   return {
     total,
     sumDevices,
     error: total === null ? null : Math.abs(total - sumDevices),
     devices: latest,
+    todayEnergyWh,
+    yesterdayEnergyWh,
   };
 }
 
@@ -175,6 +219,97 @@ async function getEnergyByDevice({ minutes = 60 } = {}) {
     device: row.device,
     energyWh: row._value,
   }));
+}
+
+async function getEnergyByDeviceWindow({ start, stop = "now()" }) {
+  const rows = await runFlux(`
+    from(bucket: "${config.influx.bucket}")
+      |> range(start: ${start}, stop: ${stop})
+      |> filter(fn: (r) => r._measurement == "energy")
+      |> filter(fn: (r) => r._field == "power")
+      |> filter(fn: (r) => ${deviceFilter({ includeTotal: false })})
+      |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
+      |> map(fn: (r) => ({ r with _value: r._value / 12.0 }))
+      |> group(columns: ["device"])
+      |> sum(column: "_value")
+      |> keep(columns: ["device", "_value"])
+  `);
+
+  return rows.map((row) => ({
+    device: row.device,
+    energyWh: row._value,
+  }));
+}
+
+async function getDailyStats() {
+  const [todayByDevice, yesterdayByDevice, peakRows, averageRows, weekRows] = await Promise.all([
+    getEnergyByDeviceWindow({ start: "-24h" }),
+    getEnergyByDeviceWindow({ start: "-48h", stop: "-24h" }),
+    runFlux(`
+      from(bucket: "${config.influx.bucket}")
+        |> range(start: -24h)
+        |> filter(fn: (r) => r._measurement == "energy")
+        |> filter(fn: (r) => r._field == "power")
+        |> filter(fn: (r) => ${deviceFilter({ includeTotal: true })})
+        |> max()
+        |> keep(columns: ["_value", "device", "_time"])
+    `),
+    runFlux(`
+      from(bucket: "${config.influx.bucket}")
+        |> range(start: -24h)
+        |> filter(fn: (r) => r._measurement == "energy")
+        |> filter(fn: (r) => r._field == "power")
+        |> filter(fn: (r) => r.device == "total")
+        |> mean()
+        |> keep(columns: ["_value"])
+    `),
+    runFlux(`
+      from(bucket: "${config.influx.bucket}")
+        |> range(start: -7d)
+        |> filter(fn: (r) => r._measurement == "energy")
+        |> filter(fn: (r) => r._field == "power")
+        |> filter(fn: (r) => ${deviceFilter({ includeTotal: false })})
+        |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+        |> map(fn: (r) => ({ r with _value: r._value }))
+        |> group(columns: ["device"])
+        |> keep(columns: ["_time", "_value", "device"])
+    `),
+  ]);
+
+  const todayWh = todayByDevice.reduce((sum, item) => sum + Number(item.energyWh || 0), 0);
+  const yesterdayWh = yesterdayByDevice.reduce((sum, item) => sum + Number(item.energyWh || 0), 0);
+  const changePercent = yesterdayWh > 0 ? ((todayWh - yesterdayWh) / yesterdayWh) * 100 : null;
+  const topDevice = todayByDevice.reduce(
+    (top, item) => (Number(item.energyWh || 0) > Number(top?.energyWh || 0) ? item : top),
+    null,
+  );
+  const peak = peakRows.reduce(
+    (top, row) => (Number(row._value || 0) > Number(top?.power || 0) ? { device: row.device, power: row._value, time: row._time } : top),
+    null,
+  );
+  const weekByDay = weekRows.reduce((groups, row) => {
+    const day = String(row._time || "").slice(0, 10);
+    const value = Number(row._value || 0);
+    groups[day] = (groups[day] || 0) + value;
+    return groups;
+  }, {});
+
+  return {
+    period: "last_24h",
+    todayWh,
+    yesterdayWh,
+    changePercent,
+    averagePower: averageRows[0]?._value || 0,
+    peakPower: peak?.power || 0,
+    peakDevice: peak?.device || null,
+    peakTime: peak?.time || null,
+    topDevice,
+    byDevice: todayByDevice.sort((a, b) => b.energyWh - a.energyWh),
+    yesterdayByDevice: yesterdayByDevice.sort((a, b) => b.energyWh - a.energyWh),
+    last7Days: Object.entries(weekByDay)
+      .map(([date, energyWh]) => ({ date, energyWh }))
+      .sort((a, b) => a.date.localeCompare(b.date)),
+  };
 }
 
 async function getStatus() {
@@ -274,6 +409,7 @@ module.exports = {
   getAlerts,
   getDevices,
   getEnergyByDevice,
+  getDailyStats,
   getHistory,
   getLatestPower,
   getStatus,

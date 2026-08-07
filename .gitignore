@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 .env
 data/
+web-dashboard/dist/
+smart_house_mobile/.dart_tool/
+smart_house_mobile/build/
+smart_house_mobile/android/build/
+*.log

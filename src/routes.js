@@ -1,7 +1,11 @@
 const { parseMinutes, readJsonBody, sendJson } = require("./http");
 const deviceRegistry = require("./services/deviceRegistry");
 const influxService = require("./services/influxService");
-const { publishControl } = require("./services/mqttService");
+const { publishControl, getMqttStatus } = require("./services/mqttService");
+const assistantService = require("./services/assistantService");
+const authService = require("./services/authService");
+const alertHistoryService = require("./services/alertHistoryService");
+const appStateService = require("./services/appStateService");
 
 function getDeviceFromPath(pathname) {
   const match = pathname.match(/^\/api\/devices\/([^/]+)\/(latest|history)$/);
@@ -9,6 +13,68 @@ function getDeviceFromPath(pathname) {
 }
 
 async function handleApiRequest(req, res, requestUrl) {
+  if (requestUrl.pathname === "/api/app-state" && req.method === "GET") {
+    sendJson(res, 200, appStateService.readState());
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/settings") {
+    if (req.method === "GET") {
+      sendJson(res, 200, appStateService.readState().settings);
+      return;
+    }
+    if (req.method === "POST") {
+      sendJson(res, 200, appStateService.updateSettings(await readJsonBody(req)));
+      return;
+    }
+  }
+
+  if (requestUrl.pathname === "/api/favorites") {
+    if (req.method === "GET") {
+      sendJson(res, 200, appStateService.readState().favorites);
+      return;
+    }
+    if (req.method === "POST") {
+      sendJson(res, 200, appStateService.updateFavorites(await readJsonBody(req)));
+      return;
+    }
+  }
+
+  if (requestUrl.pathname === "/api/scenes") {
+    if (req.method === "GET") {
+      sendJson(res, 200, appStateService.readState().scenes);
+      return;
+    }
+    if (req.method === "POST") {
+      sendJson(res, 201, appStateService.saveScene(await readJsonBody(req)));
+      return;
+    }
+  }
+
+  const deleteSceneMatch = requestUrl.pathname.match(/^\/api\/scenes\/([^/]+)$/);
+  if (deleteSceneMatch && req.method === "DELETE") {
+    sendJson(res, 200, appStateService.deleteScene(decodeURIComponent(deleteSceneMatch[1])));
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/register" && req.method === "POST") {
+    try {
+      sendJson(res, 201, authService.register(await readJsonBody(req)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 400, { error: err.message });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/login" && req.method === "POST") {
+    try {
+      sendJson(res, 200, authService.login(await readJsonBody(req)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 400, { error: err.message });
+    }
+    return;
+  }
+
   if (requestUrl.pathname === "/api/admin/devices") {
     if (req.method === "GET") {
       const [registered, measured] = await Promise.all([
@@ -53,8 +119,26 @@ async function handleApiRequest(req, res, requestUrl) {
     return;
   }
 
+  if (requestUrl.pathname === "/api/diagnostics") {
+    sendJson(res, 200, {
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      mqttConnected: getMqttStatus(),
+      pid: process.pid,
+    });
+    return;
+  }
+
   if (requestUrl.pathname === "/api/devices") {
     sendJson(res, 200, await influxService.getDevices());
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/chat" && req.method === "POST") {
+    const body = await readJsonBody(req);
+    const message = body?.prompt || body?.message || "";
+    const reply = await assistantService.processChat(message);
+    sendJson(res, 200, { response: reply, reply });
     return;
   }
 
@@ -92,13 +176,42 @@ async function handleApiRequest(req, res, requestUrl) {
 
   if (requestUrl.pathname === "/api/alerts") {
     const minutes = parseMinutes(requestUrl.searchParams.get("minutes"));
-    sendJson(res, 200, await influxService.getAlerts({ minutes }));
+    const activeAlerts = await influxService.getAlerts({ minutes });
+    sendJson(res, 200, alertHistoryService.recordActiveAlerts(activeAlerts));
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/alerts/history" || requestUrl.pathname === "/api/notifications") {
+    if (req.method === "GET") {
+      sendJson(res, 200, alertHistoryService.listHistory({
+        limit: requestUrl.searchParams.get("limit"),
+        unreadOnly: requestUrl.searchParams.get("unreadOnly") === "true",
+      }));
+      return;
+    }
+
+    if (req.method === "DELETE") {
+      alertHistoryService.clearHistory();
+      sendJson(res, 200, { cleared: true });
+      return;
+    }
+  }
+
+  const readAlertMatch = requestUrl.pathname.match(/^\/api\/alerts\/([^/]+)\/read$/);
+  if (readAlertMatch && req.method === "POST") {
+    const alert = alertHistoryService.acknowledgeAlert(decodeURIComponent(readAlertMatch[1]));
+    sendJson(res, alert ? 200 : 404, alert || { error: "Alert not found" });
     return;
   }
 
   if (requestUrl.pathname === "/api/energy") {
     const minutes = parseMinutes(requestUrl.searchParams.get("minutes"));
     sendJson(res, 200, await influxService.getEnergyByDevice({ minutes }));
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/daily-stats") {
+    sendJson(res, 200, await influxService.getDailyStats());
     return;
   }
 

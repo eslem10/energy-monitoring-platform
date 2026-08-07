@@ -1,0 +1,840 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart House Energy Dashboard</title>
+    <link rel="preconnect" href="https://unpkg.com" />
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+      :root {
+        --bg: #f5f8fb;
+        --panel: #ffffff;
+        --ink: #10221a;
+        --muted: #65746f;
+        --line: #dce8e3;
+        --green: #16bf76;
+        --blue: #2f80ed;
+        --red: #ff4d5e;
+        --amber: #ffb020;
+        --purple: #7b61ff;
+        --shadow: 0 18px 45px rgba(15, 32, 27, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: Inter, Arial, sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .app {
+        min-height: 100vh;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 18px 28px;
+        background: rgba(245, 248, 251, 0.92);
+        border-bottom: 1px solid rgba(220, 232, 227, 0.8);
+        backdrop-filter: blur(14px);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 240px;
+      }
+
+      .brand-icon {
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        color: white;
+        background: #087b54;
+        border-radius: 14px;
+        font-size: 22px;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+
+      .brand p {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: #087b54;
+        font-weight: 800;
+        box-shadow: 0 8px 20px rgba(15, 32, 27, 0.05);
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        background: var(--green);
+        border-radius: 50%;
+        box-shadow: 0 0 0 6px rgba(22, 191, 118, 0.14);
+      }
+
+      .layout {
+        max-width: 1480px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 1.1fr) minmax(260px, 0.9fr) minmax(260px, 0.9fr);
+        gap: 16px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+      }
+
+      .panel-pad {
+        padding: 20px;
+      }
+
+      .metric-hero {
+        min-height: 210px;
+        color: white;
+        background: linear-gradient(135deg, #087b54, #13b673);
+        border: 0;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .metric-hero::after {
+        content: "";
+        position: absolute;
+        inset: auto -80px -100px auto;
+        width: 260px;
+        height: 260px;
+        background: rgba(255, 255, 255, 0.14);
+        border-radius: 50%;
+      }
+
+      .metric-label {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 800;
+        opacity: 0.82;
+      }
+
+      .metric-value {
+        margin: 24px 0 4px;
+        font-size: clamp(44px, 7vw, 76px);
+        font-weight: 900;
+        letter-spacing: 0;
+      }
+
+      .metric-sub {
+        margin: 0;
+        opacity: 0.86;
+      }
+
+      .mini-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .mini-card {
+        padding: 18px;
+      }
+
+      .mini-card .icon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        background: #e8f8f0;
+        color: #087b54;
+        margin-bottom: 16px;
+      }
+
+      .mini-card h3 {
+        margin: 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .mini-card strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 28px;
+      }
+
+      .section {
+        margin-top: 18px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .section-head h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .device-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 14px;
+      }
+
+      .device-card {
+        padding: 18px;
+        min-height: 155px;
+        overflow: hidden;
+      }
+
+      .device-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .device-icon {
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        color: white;
+        font-size: 22px;
+      }
+
+      .device-name {
+        margin: 28px 0 4px;
+        font-size: 16px;
+        color: var(--muted);
+        font-weight: 800;
+      }
+
+      .device-power {
+        margin: 0;
+        font-size: 34px;
+        font-weight: 900;
+      }
+
+      .badge {
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 900;
+        color: #087b54;
+        background: #e8f8f0;
+      }
+
+      .badge.off {
+        color: #596660;
+        background: #eef2f0;
+      }
+
+      .chart-grid {
+        display: grid;
+        grid-template-columns: minmax(360px, 1.5fr) minmax(280px, 1fr);
+        gap: 16px;
+      }
+
+      .canvas-wrap {
+        height: 360px;
+        padding: 16px;
+      }
+
+      canvas {
+        width: 100%;
+        height: 100%;
+      }
+
+      .gauge-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 14px;
+      }
+
+      .gauge-card {
+        padding: 16px;
+        text-align: center;
+      }
+
+      .gauge {
+        width: 145px;
+        height: 145px;
+        margin: 4px auto 10px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: conic-gradient(var(--gauge-color) calc(var(--value) * 1%), #e8eef1 0);
+      }
+
+      .gauge-inner {
+        width: 105px;
+        height: 105px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: white;
+        box-shadow: inset 0 0 0 1px #e7eeeb;
+      }
+
+      .gauge-inner strong {
+        font-size: 22px;
+      }
+
+      .bar-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: 120px minmax(100px, 1fr) 82px;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .bar-shell {
+        height: 12px;
+        border-radius: 999px;
+        background: #edf2f4;
+        overflow: hidden;
+      }
+
+      .bar-fill {
+        height: 100%;
+        border-radius: inherit;
+      }
+
+      .lower-grid {
+        display: grid;
+        grid-template-columns: minmax(320px, 1.1fr) minmax(320px, 0.9fr);
+        gap: 16px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 13px 8px;
+        border-bottom: 1px solid #edf1f0;
+        text-align: left;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .alert {
+        display: grid;
+        grid-template-columns: 40px 1fr auto;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 0;
+        border-bottom: 1px solid #edf1f0;
+      }
+
+      .alert:last-child {
+        border-bottom: 0;
+      }
+
+      .alert-icon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        background: #fff3db;
+      }
+
+      .error {
+        padding: 14px 18px;
+        color: #8c1d18;
+        background: #fff0ef;
+        border: 1px solid #ffd2cf;
+        border-radius: 16px;
+        margin-bottom: 16px;
+      }
+
+      @media (max-width: 980px) {
+        .hero-grid,
+        .chart-grid,
+        .lower-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .brand {
+          min-width: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const API_URL = "http://127.0.0.1:3001";
+      const REFRESH_MS = 5000;
+
+      const colors = {
+        frigo: "#2f80ed",
+        fridge: "#2f80ed",
+        machine_cafe: "#ffb020",
+        cafe: "#ffb020",
+        microwave: "#ff4d5e",
+        microondes: "#ff4d5e",
+        tv: "#16bf76",
+        laptop: "#7b61ff",
+        total: "#087b54",
+      };
+
+      const icons = {
+        frigo: "ÔØä",
+        fridge: "ÔØä",
+        machine_cafe: "Ôÿò",
+        cafe: "Ôÿò",
+        microwave: "Ôûú",
+        microondes: "Ôûú",
+        tv: "Ôûú",
+        laptop: "Ôû░",
+        total: "ÔÜí",
+      };
+
+      function prettyDevice(device) {
+        return String(device || "unknown")
+          .split("_")
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(" ");
+      }
+
+      function deviceColor(device) {
+        return colors[device] || "#087b54";
+      }
+
+      function deviceIcon(device) {
+        return icons[device] || "ÔùÅ";
+      }
+
+      function formatPower(value) {
+        const number = Number(value || 0);
+        if (Math.abs(number) >= 1000) return `${(number / 1000).toFixed(2)} kW`;
+        return `${number < 10 && number % 1 !== 0 ? number.toFixed(1) : Math.round(number)} W`;
+      }
+
+      function formatWh(value) {
+        const number = Number(value || 0);
+        if (number >= 1000) return `${(number / 1000).toFixed(2)} kWh`;
+        return `${number.toFixed(2)} Wh`;
+      }
+
+      function timeOnly(value) {
+        const date = new Date(value);
+        return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      }
+
+      function useDashboardData() {
+        const [state, setState] = React.useState({
+          summary: null,
+          history: [],
+          energy: [],
+          alerts: [],
+          error: null,
+          lastRefresh: null,
+        });
+
+        const load = React.useCallback(async () => {
+          try {
+            const [summary, history, energy, alerts] = await Promise.all([
+              fetch(`${API_URL}/api/summary`).then((r) => r.json()),
+              fetch(`${API_URL}/api/history?minutes=60`).then((r) => r.json()),
+              fetch(`${API_URL}/api/energy?minutes=60`).then((r) => r.json()),
+              fetch(`${API_URL}/api/alerts?minutes=60`).then((r) => r.json()),
+            ]);
+
+            setState({
+              summary,
+              history,
+              energy,
+              alerts,
+              error: null,
+              lastRefresh: new Date(),
+            });
+          } catch (error) {
+            setState((current) => ({
+              ...current,
+              error: "Live data is temporarily unavailable. Start the local service and refresh.",
+            }));
+          }
+        }, []);
+
+        React.useEffect(() => {
+          load();
+          const timer = setInterval(load, REFRESH_MS);
+          return () => clearInterval(timer);
+        }, [load]);
+
+        return { ...state, load };
+      }
+
+      function LineChart({ points }) {
+        const canvasRef = React.useRef(null);
+
+        React.useEffect(() => {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const rect = canvas.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          canvas.width = rect.width * dpr;
+          canvas.height = rect.height * dpr;
+          const ctx = canvas.getContext("2d");
+          ctx.scale(dpr, dpr);
+          ctx.clearRect(0, 0, rect.width, rect.height);
+
+          const width = rect.width;
+          const height = rect.height;
+          const pad = { left: 46, right: 18, top: 20, bottom: 36 };
+          const chartW = width - pad.left - pad.right;
+          const chartH = height - pad.top - pad.bottom;
+
+          ctx.strokeStyle = "#dce8e3";
+          ctx.lineWidth = 1;
+          ctx.fillStyle = "#65746f";
+          ctx.font = "12px Arial";
+          const maxPower = Math.max(10, ...points.map((p) => Number(p.power || 0)));
+          for (let i = 0; i <= 5; i++) {
+            const y = pad.top + (chartH * i) / 5;
+            ctx.beginPath();
+            ctx.moveTo(pad.left, y);
+            ctx.lineTo(width - pad.right, y);
+            ctx.stroke();
+            ctx.fillText(String(Math.round(maxPower * (1 - i / 5))), 4, y + 4);
+          }
+
+          if (!points.length) {
+            ctx.fillStyle = "#65746f";
+            ctx.font = "16px Arial";
+            ctx.fillText("No chart data yet", pad.left, height / 2);
+            return;
+          }
+
+          const times = points.map((p) => new Date(p.time).getTime());
+          const minT = Math.min(...times);
+          const maxT = Math.max(...times);
+          const span = Math.max(1, maxT - minT);
+          const grouped = points.reduce((acc, point) => {
+            acc[point.device] = acc[point.device] || [];
+            acc[point.device].push(point);
+            return acc;
+          }, {});
+
+          Object.entries(grouped).forEach(([device, devicePoints]) => {
+            const sorted = [...devicePoints].sort((a, b) => new Date(a.time) - new Date(b.time));
+            ctx.beginPath();
+            sorted.forEach((point, index) => {
+              const x = pad.left + ((new Date(point.time).getTime() - minT) / span) * chartW;
+              const y = pad.top + chartH - (Number(point.power || 0) / maxPower) * chartH;
+              if (index === 0) ctx.moveTo(x, y);
+              else ctx.lineTo(x, y);
+            });
+            ctx.strokeStyle = deviceColor(device);
+            ctx.lineWidth = 3;
+            ctx.lineJoin = "round";
+            ctx.lineCap = "round";
+            ctx.stroke();
+          });
+
+          const legend = Object.keys(grouped);
+          legend.slice(0, 6).forEach((device, index) => {
+            const x = pad.left + index * 112;
+            const y = height - 10;
+            ctx.fillStyle = deviceColor(device);
+            ctx.fillRect(x, y - 8, 18, 4);
+            ctx.fillStyle = "#405049";
+            ctx.font = "12px Arial";
+            ctx.fillText(prettyDevice(device), x + 24, y - 3);
+          });
+        }, [points]);
+
+        return <canvas ref={canvasRef} />;
+      }
+
+      function DeviceCard({ reading }) {
+        const color = deviceColor(reading.device);
+        const isOff = reading.status === "OFF" || Number(reading.power) <= 5;
+        return (
+          <div className="panel device-card">
+            <div className="device-top">
+              <div className="device-icon" style={{ background: color }}>{deviceIcon(reading.device)}</div>
+              <span className={`badge ${isOff ? "off" : ""}`}>{reading.status || "ON"}</span>
+            </div>
+            <p className="device-name">{prettyDevice(reading.device)}</p>
+            <p className="device-power" style={{ color }}>{formatPower(reading.power)}</p>
+          </div>
+        );
+      }
+
+      function GaugeCard({ reading, maxPower }) {
+        const value = Math.min(100, (Number(reading.power || 0) / Math.max(1, maxPower)) * 100);
+        const color = deviceColor(reading.device);
+        return (
+          <div className="panel gauge-card">
+            <div className="gauge" style={{ "--value": value, "--gauge-color": color }}>
+              <div className="gauge-inner">
+                <strong>{formatPower(reading.power)}</strong>
+              </div>
+            </div>
+            <strong>{prettyDevice(reading.device)}</strong>
+          </div>
+        );
+      }
+
+      function BarComparison({ devices }) {
+        const max = Math.max(1, ...devices.map((item) => Number(item.power || 0)));
+        return (
+          <div className="panel panel-pad">
+            <div className="section-head">
+              <h2>Power Comparison by Device</h2>
+              <span className="muted">live</span>
+            </div>
+            <div className="bar-list">
+              {devices.map((device) => {
+                const color = deviceColor(device.device);
+                return (
+                  <div className="bar-row" key={device.device}>
+                    <strong>{prettyDevice(device.device)}</strong>
+                    <div className="bar-shell">
+                      <div className="bar-fill" style={{ width: `${(device.power / max) * 100}%`, background: color }} />
+                    </div>
+                    <strong>{formatPower(device.power)}</strong>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
+
+      function AlertsPanel({ alerts }) {
+        return (
+          <div className="panel panel-pad">
+            <div className="section-head">
+              <h2>Recent Alerts</h2>
+              <span className="muted">{alerts.length} active</span>
+            </div>
+            {alerts.length === 0 ? (
+              <p className="muted">No active alerts.</p>
+            ) : (
+              alerts.slice(0, 6).map((alert, index) => (
+                <div className="alert" key={`${alert.device}-${alert.title}-${index}`}>
+                  <div className="alert-icon">{alert.level === "info" ? "i" : "!"}</div>
+                  <div>
+                    <strong>{alert.title}</strong>
+                    <div className="muted">{prettyDevice(alert.device)} - {alert.reason}</div>
+                  </div>
+                  <strong>{timeOnly(alert.time)}</strong>
+                </div>
+              ))
+            )}
+          </div>
+        );
+      }
+
+      function LatestTable({ devices }) {
+        return (
+          <div className="panel panel-pad">
+            <div className="section-head">
+              <h2>Latest Measurements</h2>
+              <span className="muted">last value</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Device</th>
+                  <th>Status</th>
+                  <th>Power</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {devices.map((device) => (
+                  <tr key={device.device}>
+                    <td>{prettyDevice(device.device)}</td>
+                    <td>{device.status}</td>
+                    <td><strong>{formatPower(device.power)}</strong></td>
+                    <td>{timeOnly(device.time)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      function App() {
+        const { summary, history, energy, alerts, error, lastRefresh } = useDashboardData();
+        const devices = (summary?.devices || []).filter((item) => item.device !== "total");
+        const total = summary?.total ?? summary?.sumDevices ?? devices.reduce((sum, item) => sum + Number(item.power || 0), 0);
+        const maxPower = Math.max(1200, ...devices.map((item) => Number(item.power || 0)));
+        const totalEnergy = energy.reduce((sum, item) => sum + Number(item.energyWh || 0), 0);
+
+        return (
+          <div className="app">
+            <header className="topbar">
+              <div className="brand">
+                <div className="brand-icon">Ôîé</div>
+                <div>
+                  <h1>Smart House Energy</h1>
+                  <p>Real-time multi-platform monitoring</p>
+                </div>
+              </div>
+              <div className="status-pill">
+                <span className="dot"></span>
+                LIVE {lastRefresh ? `- ${timeOnly(lastRefresh)}` : ""}
+              </div>
+            </header>
+
+            <main className="layout">
+              {error && <div className="error">{error}</div>}
+
+              <section className="hero-grid">
+                <div className="panel panel-pad metric-hero">
+                  <p className="metric-label">Total Current Power</p>
+                  <div className="metric-value">{formatPower(total)}</div>
+                  <p className="metric-sub">Aggregated from live appliance measurements</p>
+                </div>
+
+                <div className="mini-stats">
+                  <div className="panel mini-card">
+                    <div className="icon">Ôûª</div>
+                    <h3>Detected Devices</h3>
+                    <strong>{devices.length}</strong>
+                  </div>
+                  <div className="panel mini-card">
+                    <div className="icon">ÔÜí</div>
+                    <h3>Energy Last Hour</h3>
+                    <strong>{formatWh(totalEnergy)}</strong>
+                  </div>
+                </div>
+
+                <div className="panel panel-pad">
+                  <div className="section-head">
+                    <h2>Device Status</h2>
+                    <span className="muted">automatic</span>
+                  </div>
+                  {devices.slice(0, 5).map((device) => (
+                    <div className="alert" key={device.device}>
+                      <div className="alert-icon" style={{ background: `${deviceColor(device.device)}22` }}>{deviceIcon(device.device)}</div>
+                      <div>
+                        <strong>{prettyDevice(device.device)}</strong>
+                        <div className="muted">{formatPower(device.power)}</div>
+                      </div>
+                      <span className={`badge ${device.status === "OFF" ? "off" : ""}`}>{device.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="section">
+                <div className="section-head">
+                  <h2>Current Power by Device</h2>
+                  <span className="muted">updates every 5s</span>
+                </div>
+                <div className="device-grid">
+                  {devices.map((device) => <DeviceCard key={device.device} reading={device} />)}
+                </div>
+              </section>
+
+              <section className="section chart-grid">
+                <div className="panel">
+                  <div className="panel-pad section-head">
+                    <h2>Power Consumption Over Time</h2>
+                    <span className="muted">last hour</span>
+                  </div>
+                  <div className="canvas-wrap">
+                    <LineChart points={history} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="section-head">
+                    <h2>Power Gauge by Device</h2>
+                  </div>
+                  <div className="gauge-grid">
+                    {devices.map((device) => <GaugeCard key={device.device} reading={device} maxPower={maxPower} />)}
+                  </div>
+                </div>
+              </section>
+
+              <section className="section lower-grid">
+                <BarComparison devices={devices} />
+                <AlertsPanel alerts={alerts} />
+              </section>
+
+              <section className="section">
+                <LatestTable devices={devices} />
+              </section>
+            </main>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>

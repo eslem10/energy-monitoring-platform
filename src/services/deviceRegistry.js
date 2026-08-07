@@ -14,12 +14,23 @@ function normalizeName(name) {
 }
 
 function defaultDevices() {
+  const basePowers = {
+    frigo: 150,
+    fridge: 150,
+    machine_cafe: 1250,
+    cafe: 1250,
+    microwave: 900,
+    microondes: 900,
+    tv: 120,
+    laptop: 65,
+  };
   return config.devices
     .filter((device) => device !== "total")
     .map((name) => ({
       name,
       label: name.replace(/_/g, " "),
       topic: `maison/${name}`,
+      basePower: basePowers[name] || 200,
       enabled: true,
       createdAt: new Date().toISOString(),
     }));
@@ -68,6 +79,7 @@ function addDevice(input) {
     name,
     label: String(input.label || name.replace(/_/g, " ")).trim(),
     topic: String(input.topic || `maison/${name}`).trim(),
+    basePower: Number(input.basePower || input.power || 250),
     enabled: input.enabled !== false,
     createdAt: existing?.createdAt || new Date().toISOString(),
   };

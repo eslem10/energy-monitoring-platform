@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { startApiServer } = require("./src/server");
 const influxService = require("./src/services/influxService");
 const { startMqttIngestion } = require("./src/services/mqttService");

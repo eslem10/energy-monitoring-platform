@@ -1,0 +1,9 @@
+node_modules
+web-dashboard/node_modules
+web-dashboard/dist
+smart_house_mobile
+mobile-app
+chatbot-backend
+.git
+.env
+data

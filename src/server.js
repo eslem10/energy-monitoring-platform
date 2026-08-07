@@ -20,6 +20,31 @@ function sendHtml(res, filePath) {
   });
 }
 
+function contentTypeFor(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  return {
+    ".css": "text/css; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+  }[ext] || "application/octet-stream";
+}
+
+function sendFile(res, filePath) {
+  fs.readFile(filePath, (err, content) => {
+    if (err) {
+      sendJson(res, 404, { error: "File not found" });
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Type": contentTypeFor(filePath),
+    });
+    res.end(content);
+  });
+}
+
 function startApiServer() {
   const server = http.createServer(async (req, res) => {
     if (req.method === "OPTIONS") {
@@ -34,9 +59,33 @@ function startApiServer() {
 
     try {
       const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+      const dashboardDist = path.join(__dirname, "..", "web-dashboard", "dist");
 
       if (req.method === "GET" && (requestUrl.pathname === "/" || requestUrl.pathname === "/dashboard")) {
-        sendHtml(res, path.join(__dirname, "..", "web-dashboard", "index.html"));
+        const restoredDashboard = path.join(__dirname, "..", "web-dashboard", "monolithic.html");
+        const builtDashboard = path.join(dashboardDist, "index.html");
+        const sourceDashboard = path.join(__dirname, "..", "web-dashboard", "index.html");
+        sendHtml(
+          res,
+          fs.existsSync(builtDashboard)
+            ? builtDashboard
+            : fs.existsSync(sourceDashboard)
+              ? sourceDashboard
+              : restoredDashboard,
+        );
+        return;
+      }
+
+      if (req.method === "GET" && (requestUrl.pathname.startsWith("/assets/") || requestUrl.pathname === "/favicon.svg" || requestUrl.pathname === "/icons.svg")) {
+        const requestedPath = path.normalize(requestUrl.pathname.replace(/^\/+/, ""));
+        const filePath = path.join(dashboardDist, requestedPath);
+
+        if (!filePath.startsWith(dashboardDist)) {
+          sendJson(res, 403, { error: "Forbidden" });
+          return;
+        }
+
+        sendFile(res, filePath);
         return;
       }
 
