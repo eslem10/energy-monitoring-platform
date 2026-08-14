@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements-collectors.txt .
+RUN pip install --no-cache-dir -r requirements-collectors.txt
+COPY mcp_cafe_wifi_mqtt.py .
+COPY mcp_fridge_wifi_mqtt.py .
+COPY mcp_laptop_wifi_mqtt.py .
+COPY mcp_microwave_mqtt_bridge.py .
+COPY mcp_tv_wifi_mqtt.py .
+COPY mqtt_device_bridge.py .
+CMD python mcp_cafe_wifi_mqtt.py & \
+    python mcp_fridge_wifi_mqtt.py & \
+    python mcp_laptop_wifi_mqtt.py & \
+    python mcp_microwave_mqtt_bridge.py & \
+    python mcp_tv_wifi_mqtt.py & \
+    wait

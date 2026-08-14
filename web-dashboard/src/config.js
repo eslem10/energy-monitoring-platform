@@ -1,4 +1,4 @@
-export const API_URL = window.location.origin.includes("3001") ? "" : "http://127.0.0.1:3001";
+export const API_URL = "";
 export const REFRESH_MS = 5000;
 
 export const colors = {
