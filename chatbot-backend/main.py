@@ -23,10 +23,16 @@ def history_context(message: Message):
 
 @app.post("/chat")
 def chat(message: Message):
-    if not GROQ_API_KEY:
-        return {"error": "GROQ_API_KEY is not configured"}
-
     historical_context = build_context(message.prompt)
+    # In local/demo mode, return the computed statistics directly rather than
+    # letting Node fall back to a generic live-only response.
+    if not GROQ_API_KEY:
+        realtime = message.realtime_context.strip()
+        reply = historical_context
+        if realtime:
+            reply += "\n\nMesures temps reel InfluxDB:\n" + realtime
+        return {"response": reply, "mode": "historical_statistics"}
+
     full_prompt = f"""Historical statistics calculated from archived measurement files:
 {historical_context}
 

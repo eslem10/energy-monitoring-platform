@@ -97,7 +97,7 @@ function fallbackProcess(message, summary) {
       }
     });
 
-    return `📊 **Current Consumption Summary:**\n\n- Total Power Draw: **${Math.round(summary.total)} W**\n- Active Devices: **{activeCount}**\n${maxDevice ? `- Highest Consumer: **${maxDevice}** (${Math.round(maxVal)} W)\n` : ""}\nEverything is under control! 👍`;
+    return `📊 **Current Consumption Summary:**\n\n- Total Power Draw: **${Math.round(summary.total)} W**\n- Active Devices: **${activeCount}**\n${maxDevice ? `- Highest Consumer: **${maxDevice}** (${Math.round(maxVal)} W)\n` : ""}\nEverything is under control! 👍`;
   }
 
   // 5. GENERIC QUANTITY
