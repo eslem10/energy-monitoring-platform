@@ -3,6 +3,25 @@ const influxService = require("./influxService");
 
 const fastApiChatUrl = process.env.CHATBOT_URL || "http://127.0.0.1:8000/chat";
 
+function formatLiveContext(summary, alerts, energy) {
+  return [
+    `Current total power: ${Math.round(summary.total ?? 0)} W`,
+    "Current device readings:",
+    ...summary.devices.map((device) => `- ${device.device}: ${Math.round(device.power)} W (${device.status})`),
+    `Energy in the last hour: ${energy.map((item) => `${item.device} ${item.energyWh.toFixed(2)} Wh`).join(", ") || "not available"}`,
+    `Active alerts: ${alerts.map((alert) => `${alert.device}: ${alert.reason}`).join("; ") || "none"}`,
+  ].join("\n");
+}
+
+async function getAssistantData() {
+  const [summary, alerts, energy] = await Promise.all([
+    influxService.getSummary(),
+    influxService.getAlerts({ minutes: 60 }),
+    influxService.getEnergyByDevice({ minutes: 60 }),
+  ]);
+  return { summary, alerts, energy, liveContext: formatLiveContext(summary, alerts, energy) };
+}
+
 // Helper to normalize strings for easy matching
 function normalize(str) {
   return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -91,11 +110,15 @@ function fallbackProcess(message, summary) {
 }
 
 async function processChat(message) {
+  let assistantData;
   try {
+    // Always query InfluxDB first: archived text files must never provide a
+    // value presented as real time.
+    assistantData = await getAssistantData();
     const response = await fetch(fastApiChatUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: message }),
+      body: JSON.stringify({ prompt: message, realtime_context: assistantData.liveContext }),
       signal: AbortSignal.timeout(35000),
     });
 
@@ -116,9 +139,7 @@ async function processChat(message) {
   }
 
   try {
-    const summary = await influxService.getSummary();
-    const alerts = await influxService.getAlerts({ minutes: 60 });
-    const energy = await influxService.getEnergyByDevice({ minutes: 60 });
+    const { summary, alerts, energy, liveContext } = assistantData || await getAssistantData();
 
     if (!ai) {
       return fallbackProcess(message, summary);
@@ -135,6 +156,7 @@ The house has the following monitored devices:
 - "total" (Total home power consumption)
 
 Here is the current real-time state of the house:
+${liveContext}
 - Summary of active devices and their current power draw:
 ${summary.devices.map(d => `- ${d.device}: ${Math.round(d.power)} W (Status: ${d.status})`).join("\n")}
 - Total power draw: ${Math.round(summary.total)} W

@@ -128,7 +128,39 @@ function login(input) {
   };
 }
 
+function getProfile(email) {
+  const user = readUsers().find((item) => item.email === normalizeEmail(email));
+  if (!user) throw new Error("Utilisateur introuvable");
+  return publicUser(user);
+}
+
+function updateProfile(input) {
+  const users = readUsers();
+  const user = users.find((item) => item.email === normalizeEmail(input.email));
+  if (!user) throw new Error("Utilisateur introuvable");
+  const name = String(input.name || "").trim();
+  if (!name) throw new Error("Nom requis");
+  user.name = name;
+  writeUsers(users);
+  return publicUser(user);
+}
+
+function resetPassword(input) {
+  const users = readUsers();
+  const user = users.find((item) => item.email === normalizeEmail(input.email));
+  if (!user) throw new Error("Utilisateur introuvable");
+  if (String(input.password || "").length < 4) throw new Error("Mot de passe trop court");
+  const password = hashPassword(input.password);
+  user.salt = password.salt;
+  user.passwordHash = password.hash;
+  writeUsers(users);
+  return { ok: true };
+}
+
 module.exports = {
   login,
+  getProfile,
   register,
+  resetPassword,
+  updateProfile,
 };

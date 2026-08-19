@@ -46,6 +46,17 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
+function exportReportPdf(dailyStats, energy) {
+  const stats = dailyStats || {};
+  const rows = energy.map((item) => `<tr><td>${prettyDevice(item.device)}</td><td>${formatWh(item.energyWh)}</td></tr>`).join("");
+  const reportWindow = window.open("", "_blank", "width=800,height=700");
+  if (!reportWindow) return;
+  reportWindow.document.write(`<!doctype html><html><head><title>Energy report</title><style>body{font:16px Arial;padding:32px;color:#172033}h1{color:#087b54}table{width:100%;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #ddd;text-align:left}.total{font-size:28px;font-weight:bold}</style></head><body><h1>Smart House Energy Report</h1><p>Generated ${new Date().toLocaleString()}</p><p class="total">Energy today: ${formatWh(stats.todayWh || 0)}</p><p>Average power: ${formatPower(stats.averagePower || 0)} &middot; Peak: ${formatPower(stats.peakPower || 0)}</p><h2>Energy by device (last hour)</h2><table><thead><tr><th>Device</th><th>Energy</th></tr></thead><tbody>${rows || "<tr><td colspan='2'>No data</td></tr>"}</tbody></table></body></html>`);
+  reportWindow.document.close();
+  reportWindow.focus();
+  reportWindow.print();
+}
+
 function currentTotal(summary) {
   if (summary?.total !== null && summary?.total !== undefined && Number.isFinite(Number(summary.total))) {
     return Number(summary.total);
@@ -53,7 +64,7 @@ function currentTotal(summary) {
   return Number(summary?.sumDevices || 0);
 }
 
-function DashboardPage({ summary, history, energy, alerts, theme, settings, onOpenDevice, onTurnOffDevice, loading }) {
+function DashboardPage({ summary, history, energy, alerts, deviceHealth, billing, theme, settings, onOpenDevice, onTurnOffDevice, loading }) {
   const tariff = Number(settings?.tariffTndPerKwh ?? TARIFF_TND_PER_KWH);
   const budget = Number(settings?.monthlyBudgetTnd ?? MONTHLY_BUDGET_TND);
   const devices = (summary?.devices || []).filter((item) => item.device !== "total");
@@ -263,6 +274,24 @@ function DashboardPage({ summary, history, energy, alerts, theme, settings, onOp
       <section className="section lower-grid">
         <LatestMeasurements devices={devices} />
         <AlertsPanel alerts={alerts} />
+      </section>
+
+      <section className="section lower-grid">
+        <div className="panel panel-pad">
+          <div className="section-head"><h2>Estimated Bill</h2><span className="muted">Not an official STEG invoice</span></div>
+          <div className="metric-value" style={{ fontSize: 32 }}>{Number(billing?.totalTnd || 0).toFixed(2)} TND</div>
+          <p className="muted">Projected from the last 24h: {Number(billing?.projectedKwhMonth || 0).toFixed(2)} kWh/month</p>
+          <p className="muted">Energy {Number(billing?.energyCostTnd || 0).toFixed(2)} TND + VAT {Number(billing?.vatTnd || 0).toFixed(2)} TND</p>
+        </div>
+        <div className="panel panel-pad">
+          <div className="section-head"><h2>Device Connectivity</h2><span className="muted">Offline after 30 seconds</span></div>
+          {(deviceHealth || []).map((device) => (
+            <div className="alert" key={device.device}>
+              <div className="alert-icon">{device.state === "online" ? "OK" : "!"}</div>
+              <div><strong>{prettyDevice(device.device)}</strong><div className="muted">{device.state === "online" ? "Online" : `Offline${device.ageSeconds !== null ? ` (${device.ageSeconds}s)` : ""}`}</div></div>
+            </div>
+          ))}
+        </div>
       </section>
     </>
   );
@@ -498,6 +527,19 @@ function ReportsPage({ history, energy, devices, dailyStats }) {
             Download energy CSV
           </button>
         </div>
+
+        <div className="export-card">
+          <div className="export-card-header">
+            <div className="export-card-icon">PDF</div>
+            <div>
+              <h3>Printable energy report</h3>
+              <p className="muted">Open a summary and choose “Save as PDF”.</p>
+            </div>
+          </div>
+          <button className="btn-csv" onClick={() => exportReportPdf(dailyStats, energy)}>
+            Export report as PDF
+          </button>
+        </div>
       </div>
 
       <section className="panel panel-pad">
@@ -509,6 +551,18 @@ function ReportsPage({ history, energy, devices, dailyStats }) {
       </section>
     </>
   );
+}
+
+function EnergyCalendar({ entries }) {
+  const max = Math.max(1, ...entries.map((entry) => Number(entry.energyWh || 0)));
+  return <section className="section panel panel-pad"><div className="section-head"><h2>Energy Calendar</h2><span className="muted">Last 35 days</span></div><div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>{entries.map((entry) => <div key={entry.date} title={`${entry.date}: ${formatWh(entry.energyWh)}`} style={{ minHeight: 60, padding: 8, borderRadius: 10, background: `rgba(22,191,118,${0.12 + 0.88 * Number(entry.energyWh || 0) / max})`, color: Number(entry.energyWh || 0) / max > .55 ? "white" : "var(--ink)" }}><strong>{entry.date.slice(8)}</strong><br /><small>{formatWh(entry.energyWh)}</small></div>)}</div></section>;
+}
+
+function ProfilePage({ user, onSave }) {
+  const [name, setName] = React.useState(user?.name || ""); const [password, setPassword] = React.useState(""); const [message, setMessage] = React.useState("");
+  async function saveProfile(event) { event.preventDefault(); const saved = await fetchJsonPost("/api/auth/profile", { email: user.email, name }); localStorage.setItem("smart-house-user", JSON.stringify(saved)); onSave(saved); setMessage("Profile saved."); }
+  async function reset(event) { event.preventDefault(); await fetchJsonPost("/api/auth/reset-password", { email: user.email, password }); setPassword(""); setMessage("Password updated."); }
+  return <><div className="section-head"><h2>Profile</h2><span className="muted">Manage your account</span></div><section className="section panel panel-pad"><form className="form-grid" onSubmit={saveProfile}><div className="form-group"><label>Name</label><input className="text-input" value={name} onChange={(e) => setName(e.target.value)} /></div><div className="form-group"><label>Email</label><input className="text-input" value={user.email} disabled /></div><button className="btn-submit">Save profile</button></form></section><section className="section panel panel-pad"><h2>Reset password</h2><p className="muted">Local reset for this demo. Add email verification before production.</p><form className="form-grid" onSubmit={reset}><div className="form-group"><label>New password</label><input className="text-input" type="password" minLength="4" value={password} onChange={(e) => setPassword(e.target.value)} required /></div><button className="btn-submit">Update password</button></form>{message ? <p className="success-box">{message}</p> : null}</section></>;
 }
 
 function SettingsPage({ devices, registry, settings, onSaveSettings, onRefresh }) {
@@ -784,6 +838,10 @@ function App() {
   const [alerts, setAlerts] = React.useState([]);
   const [diagnostics, setDiagnostics] = React.useState(null);
   const [dailyStats, setDailyStats] = React.useState(null);
+  const [deviceHealth, setDeviceHealth] = React.useState([]);
+  const [billing, setBilling] = React.useState(null);
+  const [calendar, setCalendar] = React.useState([]);
+  const [language, setLanguage] = React.useState(() => localStorage.getItem("smart-house-language") || "en");
   const [appSettings, setAppSettings] = React.useState({
     monthlyBudgetTnd: MONTHLY_BUDGET_TND,
     tariffTndPerKwh: TARIFF_TND_PER_KWH,
@@ -798,7 +856,7 @@ function App() {
 
   const loadData = React.useCallback(async () => {
     try {
-      const [summaryData, historyData, energyData, activeAlertsData, diagnosticsData, dailyStatsData, appStateData, registryData] = await Promise.all([
+      const [summaryData, historyData, energyData, activeAlertsData, diagnosticsData, dailyStatsData, appStateData, registryData, healthData, billingData, calendarData] = await Promise.all([
         fetchJson("/api/summary"),
         fetchJson("/api/history?minutes=60"),
         fetchJson("/api/energy?minutes=60"),
@@ -807,6 +865,9 @@ function App() {
         fetchJson("/api/daily-stats"),
         fetchJson("/api/app-state"),
         fetchJson("/api/admin/devices"),
+        fetchJson("/api/device-health"),
+        fetchJson("/api/billing/estimate"),
+        fetchJson("/api/energy-calendar"),
       ]);
       const alertsData = await fetchJson("/api/alerts/history?limit=100").catch(() => activeAlertsData);
 
@@ -816,6 +877,9 @@ function App() {
       setAlerts(Array.isArray(alertsData) ? alertsData : []);
       setDiagnostics(diagnosticsData || null);
       setDailyStats(dailyStatsData || null);
+      setDeviceHealth(Array.isArray(healthData) ? healthData : []);
+      setBilling(billingData || null);
+      setCalendar(Array.isArray(calendarData) ? calendarData : []);
       setAppSettings(appStateData?.settings || {
         monthlyBudgetTnd: MONTHLY_BUDGET_TND,
         tariffTndPerKwh: TARIFF_TND_PER_KWH,
@@ -839,6 +903,8 @@ function App() {
   React.useEffect(() => {
     localStorage.setItem("smart-house-theme", theme);
   }, [theme]);
+
+  React.useEffect(() => { localStorage.setItem("smart-house-language", language); }, [language]);
 
   async function turnOffDevice(device) {
     await fetchJsonPost(`/api/devices/${encodeURIComponent(device)}/control`, { action: "off" });
@@ -900,6 +966,7 @@ function App() {
           <button className={`topbar-nav-btn ${activeTab === "assistant" ? "active" : ""}`} onClick={() => setActiveTab("assistant")}>
             🤖 Assistant
           </button>
+          <button className={`topbar-nav-btn ${activeTab === "profile" ? "active" : ""}`} onClick={() => setActiveTab("profile")}>Profile</button>
         </nav>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -908,6 +975,7 @@ function App() {
           <button className="theme-btn" onClick={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}>
             {theme === "dark" ? "Light" : "Dark"}
           </button>
+          <button className="theme-btn" onClick={() => setLanguage((value) => value === "en" ? "fr" : "en")}>{language === "en" ? "Français" : "English"}</button>
           <button className="theme-btn" onClick={logout}>
             Logout
           </button>
@@ -932,6 +1000,8 @@ function App() {
             history={history}
             energy={energy}
             alerts={alerts}
+            deviceHealth={deviceHealth}
+            billing={billing}
             theme={theme}
             settings={appSettings}
             loading={loading}
@@ -940,7 +1010,7 @@ function App() {
           />
         ) : null}
 
-        {activeTab === "reports" ? <ReportsPage history={history} energy={energy} devices={devices} dailyStats={dailyStats} /> : null}
+        {activeTab === "reports" ? <><ReportsPage history={history} energy={energy} devices={devices} dailyStats={dailyStats} /><EnergyCalendar entries={calendar} /></> : null}
 
         {activeTab === "settings" ? (
           <SettingsPage devices={devices} registry={registry} settings={appSettings} onSaveSettings={saveSettings} onRefresh={loadData} />
@@ -955,6 +1025,7 @@ function App() {
         ) : null}
 
         {activeTab === "assistant" ? <AssistantChat /> : null}
+        {activeTab === "profile" ? <ProfilePage user={user} onSave={setUser} /> : null}
       </main>
 
       {selectedDevice ? (

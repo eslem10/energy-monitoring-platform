@@ -1,56 +1,66 @@
+from pathlib import Path
 import pandas as pd
-import os
+
+BASE_DIR = Path(__file__).resolve().parent
+CACHE_PATH = BASE_DIR / "data_cache.parquet"
 
 DEVICE_ALIASES = {
-    'cafe': ['cafe', 'café', 'coffee', 'machine a cafe'],
-    'fridge': ['fridge', 'frigo', 'refrigerateur', 'réfrigérateur'],
-    'laptop': ['laptop', 'ordinateur', 'pc'],
-    'totale': ['totale', 'total', 'global'],
-    'tv': ['tv', 'television', 'télé'],
+    "cafe": ["cafe", "coffee", "machine a cafe", "machine_cafe"],
+    "fridge": ["fridge", "frigo", "refrigerateur"],
+    "laptop": ["laptop", "ordinateur", "pc"],
+    "totale": ["totale", "total", "global", "maison"],
+    "tv": ["tv", "television"],
 }
-
+MONTHS = {3: ("march", "mars"), 4: ("april", "avril"), 5: ("may", "mai"), 6: ("june", "juin"), 7: ("july", "juillet")}
 _df_cache = None
+
 
 def get_data():
     global _df_cache
     if _df_cache is None:
-        _df_cache = pd.read_parquet("data_cache.parquet")
+        if not CACHE_PATH.exists():
+            raise FileNotFoundError("Historical cache missing. Run build_history_cache.py.")
+        _df_cache = pd.read_parquet(CACHE_PATH)
+        _df_cache["datetime"] = pd.to_datetime(_df_cache["datetime"])
     return _df_cache
 
 
 def detect_device(question):
     question_lower = question.lower()
     for device, aliases in DEVICE_ALIASES.items():
-        for alias in aliases:
-            if alias in question_lower:
-                return device
+        if any(alias in question_lower for alias in aliases):
+            return device
     return None
 
 
+def filter_period(df, question):
+    question_lower = question.lower()
+    for month_number, names in MONTHS.items():
+        if any(name in question_lower for name in names):
+            return df[df["datetime"].dt.month == month_number], f" pour {names[-1]}"
+    return df, ""
+
+
 def build_context(question):
-    df = get_data()
+    df, period_label = filter_period(get_data(), question)
     device = detect_device(question)
-
-    if device:
-        d = df[df['device'] == device]
-        context = f"Statistiques pour l'appareil '{device}':\n"
-    else:
-        d = df
-        context = "Statistiques globales (tous appareils confondus):\n"
-
+    d = df[df["device"] == device] if device else df
+    scope = f"l'appareil '{device}'" if device else "tous les appareils"
     if d.empty:
-        return "Aucune donnee trouvee pour cette question."
+        return "Aucune donnee historique trouvee pour cette question."
 
-    context += f"- Periode disponible: du {d['datetime'].min()} au {d['datetime'].max()}\n"
-    context += f"- Nombre de mesures: {len(d)}\n"
-    context += f"- Voltage moyen: {d['V'].mean():.2f} V\n"
-    context += f"- Courant moyen: {d['I'].mean():.4f} A\n"
-    context += f"- Puissance moyenne: {d['P'].mean():.2f} W\n"
-    context += f"- Puissance max: {d['P'].max():.2f} W\n"
-    context += f"- Puissance min: {d['P'].min():.2f} W\n"
-    context += f"- Facteur de puissance moyen: {d['PF'].mean():.3f}\n"
-
-    energy_wh = d['P'].sum() * (5/3600)
-    context += f"- Energie consommee estimee: {energy_wh/1000:.3f} kWh\n"
-
-    return context
+    interval_seconds = d["datetime"].sort_values().diff().dt.total_seconds().median()
+    interval_seconds = interval_seconds if pd.notna(interval_seconds) and interval_seconds > 0 else 5
+    energy_wh = d["P"].sum() * interval_seconds / 3600
+    return "\n".join([
+        f"Statistiques historiques pour {scope}{period_label}:",
+        f"- Periode disponible: du {d['datetime'].min()} au {d['datetime'].max()}",
+        f"- Nombre de mesures: {len(d)}",
+        f"- Voltage moyen: {d['V'].mean():.2f} V",
+        f"- Courant moyen: {d['I'].mean():.4f} A",
+        f"- Puissance moyenne: {d['P'].mean():.2f} W",
+        f"- Puissance maximale: {d['P'].max():.2f} W",
+        f"- Puissance minimale: {d['P'].min():.2f} W",
+        f"- Facteur de puissance moyen: {d['PF'].mean():.3f}",
+        f"- Energie estimee: {energy_wh / 1000:.3f} kWh",
+    ])

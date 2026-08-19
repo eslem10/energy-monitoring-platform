@@ -6,6 +6,28 @@ const assistantService = require("./services/assistantService");
 const authService = require("./services/authService");
 const alertHistoryService = require("./services/alertHistoryService");
 const appStateService = require("./services/appStateService");
+const billingService = require("./services/billingService");
+
+async function getDeviceHealth() {
+  const [registered, lastSeen] = await Promise.all([
+    deviceRegistry.listDevices(),
+    influxService.getLastSeen(),
+  ]);
+  const seenByName = new Map(lastSeen.map((item) => [item.device, item]));
+  const now = Date.now();
+  return registered.filter((device) => device.enabled !== false).map((device) => {
+    const reading = seenByName.get(device.name);
+    const ageSeconds = reading ? Math.max(0, Math.round((now - new Date(reading.time).getTime()) / 1000)) : null;
+    return {
+      device: device.name,
+      label: device.label,
+      lastSeenAt: reading?.time || null,
+      lastPower: reading?.power ?? null,
+      ageSeconds,
+      state: ageSeconds !== null && ageSeconds <= 30 ? "online" : "offline",
+    };
+  });
+}
 
 function getDeviceFromPath(pathname) {
   const match = pathname.match(/^\/api\/devices\/([^/]+)\/(latest|history)$/);
@@ -162,6 +184,35 @@ async function handleApiRequest(req, res, requestUrl) {
     return;
   }
 
+  if (requestUrl.pathname === "/api/auth/profile") {
+    try {
+      const body = req.method === "GET" ? { email: requestUrl.searchParams.get("email") } : await readJsonBody(req);
+      sendJson(res, 200, req.method === "GET" ? authService.getProfile(body.email) : authService.updateProfile(body));
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/reset-password" && req.method === "POST") {
+    try {
+      sendJson(res, 200, authService.resetPassword(await readJsonBody(req)));
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/billing/estimate") {
+    sendJson(res, 200, await billingService.getEstimate());
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/device-health") {
+    sendJson(res, 200, await getDeviceHealth());
+    return;
+  }
+
   if (requestUrl.pathname === "/api/history") {
     const minutes = parseMinutes(requestUrl.searchParams.get("minutes"));
     const device = requestUrl.searchParams.get("device");
@@ -176,7 +227,16 @@ async function handleApiRequest(req, res, requestUrl) {
 
   if (requestUrl.pathname === "/api/alerts") {
     const minutes = parseMinutes(requestUrl.searchParams.get("minutes"));
-    const activeAlerts = await influxService.getAlerts({ minutes });
+    const [usageAlerts, health] = await Promise.all([influxService.getAlerts({ minutes }), getDeviceHealth()]);
+    const offlineAlerts = health.filter((device) => device.state === "offline").map((device) => ({
+      title: "Device offline",
+      device: device.device,
+      reason: device.lastSeenAt ? `No measurement received for ${device.ageSeconds}s.` : "No measurement has been received.",
+      power: device.lastPower || 0,
+      time: device.lastSeenAt || new Date().toISOString(),
+      level: "warning",
+    }));
+    const activeAlerts = [...usageAlerts, ...offlineAlerts];
     sendJson(res, 200, alertHistoryService.recordActiveAlerts(activeAlerts));
     return;
   }
@@ -212,6 +272,11 @@ async function handleApiRequest(req, res, requestUrl) {
 
   if (requestUrl.pathname === "/api/daily-stats") {
     sendJson(res, 200, await influxService.getDailyStats());
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/energy-calendar") {
+    sendJson(res, 200, await influxService.getEnergyCalendar({ days: 35 }));
     return;
   }
 

@@ -323,6 +323,33 @@ async function getStatus() {
   }));
 }
 
+async function getEnergyCalendar({ days = 35 } = {}) {
+  const rows = await runFlux(`
+    from(bucket: "${config.influx.bucket}")
+      |> range(start: -${days}d)
+      |> filter(fn: (r) => r._measurement == "energy" and r._field == "power" and r.device != "total")
+      |> aggregateWindow(every: 1d, fn: mean, createEmpty: false)
+      |> map(fn: (r) => ({ r with _value: r._value * 24.0 }))
+      |> group(columns: ["_time"])
+      |> sum()
+      |> keep(columns: ["_time", "_value"])
+  `);
+  return rows.map((row) => ({ date: String(row._time).slice(0, 10), energyWh: row._value }));
+}
+
+async function getLastSeen({ hours = 720 } = {}) {
+  const rows = await runFlux(`
+    from(bucket: "${config.influx.bucket}")
+      |> range(start: -${hours}h)
+      |> filter(fn: (r) => r._measurement == "energy")
+      |> filter(fn: (r) => r._field == "power")
+      |> group(columns: ["device"])
+      |> last()
+      |> keep(columns: ["device", "_time", "_value"])
+  `);
+  return rows.map((row) => ({ device: row.device, time: row._time, power: row._value }));
+}
+
 function highPowerThreshold(device) {
   const thresholds = {
     microwave: 1000,
@@ -410,8 +437,10 @@ module.exports = {
   getDevices,
   getEnergyByDevice,
   getDailyStats,
+  getEnergyCalendar,
   getHistory,
   getLatestPower,
+  getLastSeen,
   getStatus,
   getSummary,
   writeMeasurement,

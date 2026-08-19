@@ -21,6 +21,18 @@ Le chatbot utilise aussi un backend FastAPI separe:
 Frontend Assistant IA -> FastAPI /chat -> response
 ```
 
+Le chatbot utilise les fichiers `mcp_*_data/*.txt` pour les statistiques
+historiques (mars a juillet), tandis que les valeurs affichees comme
+"temps reel" sont toujours lues depuis InfluxDB. Apres l'ajout de nouveaux
+fichiers historiques, reconstruire le cache avec:
+
+```powershell
+python chatbot-backend/build_history_cache.py
+```
+
+Copier `chatbot-backend/.env.example` vers `chatbot-backend/.env`, puis y
+ajouter `GROQ_API_KEY` pour les reponses generees par IA.
+
 Architecture detaillee des dossiers:
 
 ```text

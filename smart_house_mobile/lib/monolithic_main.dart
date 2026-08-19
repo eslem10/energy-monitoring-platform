@@ -116,6 +116,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool loggedIn = false;
   String userName = 'Admin';
+  String userEmail = '';
   String apiUrl = defaultApiUrl();
 
   @override
@@ -123,10 +124,11 @@ class _AuthGateState extends State<AuthGate> {
     if (!loggedIn) {
       return AuthPage(
         apiUrl: apiUrl,
-        onLogin: (name) {
+        onLogin: (user) {
           setState(() {
             loggedIn = true;
-            userName = name;
+            userName = user['name'] ?? 'Admin';
+            userEmail = user['email'] ?? '';
           });
         },
       );
@@ -136,6 +138,7 @@ class _AuthGateState extends State<AuthGate> {
       initialApiUrl: apiUrl,
       onApiUrlChanged: (value) => setState(() => apiUrl = value),
       userName: userName,
+      userEmail: userEmail,
       onLogout: () => setState(() => loggedIn = false),
       darkMode: widget.darkMode,
       onThemeToggle: widget.onThemeToggle,
@@ -147,7 +150,7 @@ class AuthPage extends StatefulWidget {
   const AuthPage({super.key, required this.apiUrl, required this.onLogin});
 
   final String apiUrl;
-  final ValueChanged<String> onLogin;
+  final ValueChanged<Map<String, String>> onLogin;
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -213,7 +216,7 @@ class _AuthPageState extends State<AuthPage> {
           ? user['name'].toString()
           : name;
 
-      widget.onLogin(displayName);
+      widget.onLogin({'name': displayName, 'email': email});
     } catch (err) {
       if (!mounted) return;
       setState(() {
@@ -223,6 +226,31 @@ class _AuthPageState extends State<AuthPage> {
       if (mounted) {
         setState(() => loading = false);
       }
+    }
+  }
+
+  Future<void> resetPassword() async {
+    final email = emailController.text.trim();
+    final password = passwordController.text.trim();
+    if (!email.contains('@') || password.length < 4) {
+      setState(() => error = 'Enter your email and a new password (4+ characters).');
+      return;
+    }
+    setState(() { loading = true; error = null; });
+    try {
+      final response = await http.post(
+        Uri.parse('${widget.apiUrl}/api/auth/reset-password'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(response.body);
+      }
+      if (mounted) setState(() => error = 'Password updated. You can now log in.');
+    } catch (err) {
+      if (mounted) setState(() => error = 'Password reset failed: $err');
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
   }
 
@@ -311,6 +339,10 @@ class _AuthPageState extends State<AuthPage> {
                             : 'Create new account',
                       ),
                     ),
+                    TextButton(
+                      onPressed: loading ? null : resetPassword,
+                      child: const Text('Forgot password / Reset password'),
+                    ),
                   ],
                 ),
               ),
@@ -328,6 +360,7 @@ class DashboardShell extends StatefulWidget {
     required this.initialApiUrl,
     required this.onApiUrlChanged,
     required this.userName,
+    required this.userEmail,
     required this.onLogout,
     required this.darkMode,
     required this.onThemeToggle,
@@ -336,6 +369,7 @@ class DashboardShell extends StatefulWidget {
   final String initialApiUrl;
   final ValueChanged<String> onApiUrlChanged;
   final String userName;
+  final String userEmail;
   final VoidCallback onLogout;
   final bool darkMode;
   final VoidCallback onThemeToggle;
@@ -346,12 +380,16 @@ class DashboardShell extends StatefulWidget {
 
 class _DashboardShellState extends State<DashboardShell> {
   int selectedIndex = 0;
+  bool french = false;
   late String apiUrl;
   SummaryData? summary;
   List<DeviceReading> history = [];
   List<DeviceEnergy> energy = [];
   DailyStats? dailyStats;
   List<AppAlert> alerts = [];
+  List<Map<String, dynamic>> calendar = [];
+  Map<String, dynamic>? billing;
+  List<Map<String, dynamic>> deviceHealth = [];
   Map<String, dynamic>? diagnostics;
   List<ManagedDevice> adminDevices = [];
   Map<String, bool> deviceControlStates = {};
@@ -420,6 +458,9 @@ class _DashboardShellState extends State<DashboardShell> {
         getJson('/api/daily-stats'),
         getJson('/api/diagnostics'),
         getJson('/api/admin/devices'),
+        getJson('/api/energy-calendar'),
+        getJson('/api/billing/estimate'),
+        getJson('/api/device-health'),
       ]);
 
       if (!mounted) return;
@@ -439,6 +480,9 @@ class _DashboardShellState extends State<DashboardShell> {
         adminDevices = (results[7] as List)
             .map((item) => ManagedDevice.fromJson(item))
             .toList();
+        calendar = (results[8] as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
+        billing = Map<String, dynamic>.from(results[9] as Map);
+        deviceHealth = (results[10] as List).map((item) => Map<String, dynamic>.from(item as Map)).toList();
         error = null;
 
         final nextStates = Map<String, bool>.from(deviceControlStates);
@@ -779,7 +823,7 @@ class _DashboardShellState extends State<DashboardShell> {
         onApplyCustomScene: applyCustomScene,
         onDeleteCustomScene: deleteCustomScene,
       ),
-      ReportsPage(summary: summary, energy: energy, alerts: alerts),
+      ReportsPage(summary: summary, energy: energy, alerts: alerts, calendar: calendar, billing: billing, deviceHealth: deviceHealth),
       SettingsPage(
         devices: adminDevices,
         apiUrl: apiUrl,
@@ -808,6 +852,15 @@ class _DashboardShellState extends State<DashboardShell> {
         ),
         leading: const Icon(Icons.home_rounded),
         actions: [
+          IconButton(
+            tooltip: 'Profile',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => MobileProfilePage(apiUrl: apiUrl, name: widget.userName, email: widget.userEmail))),
+            icon: const Icon(Icons.person_rounded),
+          ),
+          TextButton(
+            onPressed: () => setState(() => french = !french),
+            child: Text(french ? 'EN' : 'FR'),
+          ),
           IconButton(
             tooltip: 'Theme',
             onPressed: widget.onThemeToggle,
@@ -859,26 +912,26 @@ class _DashboardShellState extends State<DashboardShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) => setState(() => selectedIndex = index),
-        destinations: const [
+        destinations: [
           NavigationDestination(
             icon: Icon(Icons.dashboard_rounded),
-            label: 'Dashboard',
+            label: french ? 'Accueil' : 'Dashboard',
           ),
           NavigationDestination(
             icon: Icon(Icons.description_rounded),
-            label: 'Reports',
+            label: french ? 'Rapports' : 'Reports',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_rounded),
-            label: 'Settings',
+            label: french ? 'Reglages' : 'Settings',
           ),
           NavigationDestination(
             icon: Icon(Icons.network_check_rounded),
-            label: 'Diagnostics',
+            label: french ? 'Diagnostic' : 'Diagnostics',
           ),
           NavigationDestination(
             icon: Icon(Icons.notifications_rounded),
-            label: 'Alerts',
+            label: french ? 'Alertes' : 'Alerts',
           ),
           NavigationDestination(
             icon: Icon(Icons.smart_toy_rounded),
@@ -1953,11 +2006,17 @@ class ReportsPage extends StatelessWidget {
     required this.summary,
     required this.energy,
     required this.alerts,
+    this.calendar = const [],
+    this.billing,
+    this.deviceHealth = const [],
   });
 
   final SummaryData? summary;
   final List<DeviceEnergy> energy;
   final List<AppAlert> alerts;
+  final List<Map<String, dynamic>> calendar;
+  final Map<String, dynamic>? billing;
+  final List<Map<String, dynamic>> deviceHealth;
 
   @override
   Widget build(BuildContext context) {
@@ -1996,6 +2055,16 @@ class ReportsPage extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          MetricCard(title: 'Estimated monthly bill', value: '${(billing?['totalTnd'] as num? ?? 0).toStringAsFixed(2)} TND', icon: Icons.receipt_long_rounded),
+          const SizedBox(height: 12),
+          CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Energy calendar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 10),
+            Wrap(spacing: 6, runSpacing: 6, children: calendar.map((item) { final value = (item['energyWh'] as num? ?? 0).toDouble(); return Tooltip(message: '${item['date']}: ${value.toStringAsFixed(1)} Wh', child: Container(width: 34, height: 34, alignment: Alignment.center, decoration: BoxDecoration(color: Color.lerp(const Color(0xffd9f5e8), const Color(0xff087b54), math.min(1, value / 1000)), borderRadius: BorderRadius.circular(7)), child: Text('${item['date']}'.substring(8), style: const TextStyle(fontSize: 11, color: Colors.white)))); }).toList()),
+          ])),
+          const SizedBox(height: 12),
+          CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Device connectivity', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)), const SizedBox(height: 8), ...deviceHealth.map((item) => ListTile(title: Text(prettyDevice('${item['device']}')), trailing: Text('${item['state']}'.toUpperCase(), style: TextStyle(color: item['state'] == 'online' ? Colors.green : Colors.red, fontWeight: FontWeight.bold))))])),
       ],
     );
   }
@@ -2113,6 +2182,63 @@ class RecommendationsPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class MobileProfilePage extends StatefulWidget {
+  const MobileProfilePage({super.key, required this.apiUrl, required this.name, required this.email});
+  final String apiUrl;
+  final String name;
+  final String email;
+
+  @override
+  State<MobileProfilePage> createState() => _MobileProfilePageState();
+}
+
+class _MobileProfilePageState extends State<MobileProfilePage> {
+  late final TextEditingController nameController = TextEditingController(text: widget.name);
+  final passwordController = TextEditingController();
+  String message = '';
+  bool loading = false;
+
+  @override
+  void dispose() { nameController.dispose(); passwordController.dispose(); super.dispose(); }
+
+  Future<void> saveProfile() async {
+    setState(() { loading = true; message = ''; });
+    try {
+      final response = await http.post(Uri.parse('${widget.apiUrl}/api/auth/profile'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'email': widget.email, 'name': nameController.text.trim()}));
+      if (response.statusCode < 200 || response.statusCode >= 300) throw Exception(response.body);
+      if (mounted) setState(() => message = 'Profile saved.');
+    } catch (err) { if (mounted) setState(() => message = 'Unable to save profile: $err'); }
+    finally { if (mounted) setState(() => loading = false); }
+  }
+
+  Future<void> changePassword() async {
+    if (passwordController.text.length < 4) { setState(() => message = 'Password must have at least 4 characters.'); return; }
+    setState(() { loading = true; message = ''; });
+    try {
+      final response = await http.post(Uri.parse('${widget.apiUrl}/api/auth/reset-password'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'email': widget.email, 'password': passwordController.text}));
+      if (response.statusCode < 200 || response.statusCode >= 300) throw Exception(response.body);
+      if (mounted) setState(() { passwordController.clear(); message = 'Password updated.'; });
+    } catch (err) { if (mounted) setState(() => message = 'Unable to update password: $err'); }
+    finally { if (mounted) setState(() => loading = false); }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Profile')), body: ListView(padding: const EdgeInsets.all(16), children: [
+    CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Icon(Icons.person_rounded, size: 42, color: Color(0xff087b54)), const SizedBox(height: 12),
+      TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Name')),
+      const SizedBox(height: 10), Text('Email: ${widget.email}', style: const TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 12), FilledButton(onPressed: loading ? null : saveProfile, child: const Text('Save profile')),
+    ])),
+    const SizedBox(height: 12), CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Reset password', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)), const SizedBox(height: 10),
+      TextField(controller: passwordController, obscureText: true, decoration: const InputDecoration(labelText: 'New password')),
+      const SizedBox(height: 12), FilledButton(onPressed: loading ? null : changePassword, child: const Text('Update password')),
+      if (message.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text(message)),
+    ])),
+  ]));
 }
 
 class ProfilePage extends StatelessWidget {
