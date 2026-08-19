@@ -1,22 +1,21 @@
 import React from "react";
 
-export function BudgetCard({ monthlyCost, monthlyBudget }) {
+export function BudgetCard({ monthlyCost, monthlyBudget, tariff }) {
   const percent = Math.min(100, Math.round((monthlyCost / Math.max(1, monthlyBudget)) * 100));
   let color = "var(--green)";
-  let statusText = "Budget sous contrôle";
-
+  let statusText = "Budget sous controle";
   if (percent >= 90) {
     color = "var(--red)";
-    statusText = "⚠ DÉPASSEMENT IMMINENT / ATTEINT";
+    statusText = "DEPASSEMENT IMMINENT / ATTEINT";
   } else if (percent >= 70) {
     color = "var(--amber)";
-    statusText = "Attention, 70%+ consommé";
+    statusText = "Attention, 70%+ consomme";
   }
 
   return (
     <div className="panel panel-pad">
       <div className="section-head" style={{ marginBottom: "6px" }}>
-        <h2>🎯 Budget Électricité Mensuel</h2>
+        <h2>Budget Electricite Mensuel</h2>
         <span className="muted" style={{ fontWeight: 800, color }}>{statusText}</span>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: "10px" }}>
@@ -27,7 +26,7 @@ export function BudgetCard({ monthlyCost, monthlyBudget }) {
         <div className="budget-progress-fill" style={{ width: `${percent}%`, background: color }} />
       </div>
       <p className="muted" style={{ margin: "4px 0 0", fontSize: "12px" }}>
-        Projection mensuelle basée sur le tarif de 0.250 TND / kWh
+        Projection basee sur InfluxDB (dernieres 24h), tarif {Number(tariff || 0).toFixed(3)} TND / kWh et TVA inclus.
       </p>
     </div>
   );

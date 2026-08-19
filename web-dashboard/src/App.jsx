@@ -57,6 +57,15 @@ function exportReportPdf(dailyStats, energy) {
   reportWindow.print();
 }
 
+function printInvoice(billing, user) {
+  const invoice = billing || {};
+  const amount = (value) => `${Number(value || 0).toFixed(3)} TND`;
+  const popup = window.open("", "_blank", "width=850,height=900");
+  if (!popup) return;
+  popup.document.write(`<!doctype html><html><head><title>Facture STEG estimative</title><style>body{font:14px Arial;color:#133333;padding:34px}.header{background:#e5f4f6;padding:22px;border-bottom:4px solid #0f7782}.logo{font-size:25px;font-weight:bold;color:#087b54}.title{border:2px solid #2b8791;padding:12px;margin-top:20px;text-align:center;font-size:22px;font-weight:bold;letter-spacing:3px}table{width:100%;border-collapse:collapse;margin-top:20px}th{background:#e8f4f5}td,th{border:1px solid #84aeb2;padding:10px;text-align:left}.total{margin-top:24px;border:3px solid #bd3b3b;padding:18px;font-size:24px;font-weight:bold;color:#a22}.notice{margin-top:20px;padding:12px;background:#fff6d9;border-left:5px solid #e4a11b}@media print{button{display:none}}</style></head><body><div class="header"><div class="logo">STEG — Société Tunisienne de l'Électricité et du Gaz</div><div>Facture estimative — Smart House Energy Monitoring</div></div><div class="title">FACTURE / فاتورة</div><p><b>Référence:</b> ${invoice.reference || "EST-ENERGY"}<br><b>Client:</b> ${user?.name || "Utilisateur Smart House"}<br><b>Email:</b> ${user?.email || "--"}<br><b>Période:</b> ${invoice.periodStart || "--"} au ${invoice.periodEnd || "--"}</p><table><thead><tr><th>Consommation et services</th><th>Quantité</th><th>Prix</th><th>Montant</th></tr></thead><tbody><tr><td>Électricité estimée</td><td>${Number(invoice.projectedKwhMonth || 0).toFixed(3)} kWh</td><td>${Number(invoice.tariffTndPerKwh || 0).toFixed(3)} TND/kWh</td><td>${amount(invoice.energyCostTnd)}</td></tr><tr><td>Redevances fixes</td><td>—</td><td>—</td><td>${amount(invoice.fixedFeesTnd)}</td></tr><tr><td>TVA (${Math.round(Number(invoice.vatRate || 0) * 100)}%)</td><td>—</td><td>—</td><td>${amount(invoice.vatTnd)}</td></tr></tbody></table><div class="total">MONTANT TOTAL: ${amount(invoice.totalTnd)}</div><div class="notice"><b>Important:</b> ceci est une estimation basée sur les données InfluxDB des dernières 24h, projetées sur 30 jours. Ce document n'est pas une facture STEG officielle.</div></body></html>`);
+  popup.document.close(); popup.focus(); popup.print();
+}
+
 function currentTotal(summary) {
   if (summary?.total !== null && summary?.total !== undefined && Number.isFinite(Number(summary.total))) {
     return Number(summary.total);
@@ -72,7 +81,9 @@ function DashboardPage({ summary, history, energy, alerts, deviceHealth, billing
   const activeDevices = devices.filter((item) => Number(item.power) > 5);
   const peak = history.length ? Math.max(...history.map((point) => Number(point.power || 0))) : 0;
   const energyTotal = energy.reduce((sum, row) => sum + Number(row.energyWh || 0), 0);
-  const monthlyCost = (energyTotal / 1000) * tariff * 24 * 30;
+  // The backend estimate is based on the last 24 hours of InfluxDB data.
+  // Keep the budget card aligned with that single source of truth.
+  const monthlyCost = billing ? Number(billing.totalTnd || 0) : 0;
   const weeklyData = energy.map((row) => ({
     label: prettyDevice(row.device).slice(0, 6),
     value: Number(row.energyWh || 0),
@@ -145,7 +156,7 @@ function DashboardPage({ summary, history, energy, alerts, deviceHealth, billing
           </div>
         </div>
 
-        <BudgetCard monthlyCost={monthlyCost} monthlyBudget={budget} />
+        <BudgetCard monthlyCost={monthlyCost} monthlyBudget={budget} tariff={tariff} />
       </section>
 
       {/* Insights & Consumption Statistics */}
@@ -558,6 +569,12 @@ function EnergyCalendar({ entries }) {
   return <section className="section panel panel-pad"><div className="section-head"><h2>Energy Calendar</h2><span className="muted">Last 35 days</span></div><div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>{entries.map((entry) => <div key={entry.date} title={`${entry.date}: ${formatWh(entry.energyWh)}`} style={{ minHeight: 60, padding: 8, borderRadius: 10, background: `rgba(22,191,118,${0.12 + 0.88 * Number(entry.energyWh || 0) / max})`, color: Number(entry.energyWh || 0) / max > .55 ? "white" : "var(--ink)" }}><strong>{entry.date.slice(8)}</strong><br /><small>{formatWh(entry.energyWh)}</small></div>)}</div></section>;
 }
 
+function InvoicePage({ billing, user }) {
+  const invoice = billing || {};
+  const money = (value) => `${Number(value || 0).toFixed(3)} TND`;
+  return <section className="steg-invoice panel"><div className="steg-header"><div><strong>STEG</strong><span>Société Tunisienne de l'Électricité et du Gaz</span></div><span>Smart House • Estimation</span></div><div className="steg-title">FACTURE <small>فاتورة</small></div><div className="steg-meta"><div><b>Référence:</b> {invoice.reference || "--"}<br /><b>Client:</b> {user?.name || "--"}<br /><b>Email:</b> {user?.email || "--"}</div><div><b>Période:</b><br />Du {invoice.periodStart || "--"}<br />Au {invoice.periodEnd || "--"}</div></div><h3>Consommation et services</h3><table><thead><tr><th>Libellé</th><th>Quantité</th><th>Prix unitaire</th><th>Montant</th></tr></thead><tbody><tr><td>Électricité estimée</td><td>{Number(invoice.projectedKwhMonth || 0).toFixed(3)} kWh</td><td>{Number(invoice.tariffTndPerKwh || 0).toFixed(3)} TND/kWh</td><td>{money(invoice.energyCostTnd)}</td></tr><tr><td>Redevances fixes</td><td>—</td><td>—</td><td>{money(invoice.fixedFeesTnd)}</td></tr><tr><td>TVA ({Math.round(Number(invoice.vatRate || 0) * 100)}%)</td><td>—</td><td>—</td><td>{money(invoice.vatTnd)}</td></tr></tbody></table><div className="steg-total"><span>MONTANT TOTAL</span><strong>{money(invoice.totalTnd)}</strong></div><p className="steg-notice">Estimation calculée depuis InfluxDB (consommation des dernières 24h projetée sur 30 jours). Ce n'est pas une facture STEG officielle.</p><button className="btn-submit" onClick={() => printInvoice(invoice, user)}>Télécharger / Imprimer PDF</button></section>;
+}
+
 function ProfilePage({ user, onSave }) {
   const [name, setName] = React.useState(user?.name || ""); const [password, setPassword] = React.useState(""); const [message, setMessage] = React.useState("");
   async function saveProfile(event) { event.preventDefault(); const saved = await fetchJsonPost("/api/auth/profile", { email: user.email, name }); localStorage.setItem("smart-house-user", JSON.stringify(saved)); onSave(saved); setMessage("Profile saved."); }
@@ -967,6 +984,7 @@ function App() {
             🤖 Assistant
           </button>
           <button className={`topbar-nav-btn ${activeTab === "profile" ? "active" : ""}`} onClick={() => setActiveTab("profile")}>Profile</button>
+          <button className={`topbar-nav-btn ${activeTab === "invoice" ? "active" : ""}`} onClick={() => setActiveTab("invoice")}>Facture</button>
         </nav>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -1026,6 +1044,7 @@ function App() {
 
         {activeTab === "assistant" ? <AssistantChat /> : null}
         {activeTab === "profile" ? <ProfilePage user={user} onSave={setUser} /> : null}
+        {activeTab === "invoice" ? <InvoicePage billing={billing} user={user} /> : null}
       </main>
 
       {selectedDevice ? (

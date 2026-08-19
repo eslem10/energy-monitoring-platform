@@ -5,6 +5,9 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 void main() {
   runApp(const SmartHouseApp());
@@ -2055,6 +2058,12 @@ class ReportsPage extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StegInvoicePage(billing: billing))),
+            icon: const Icon(Icons.receipt_long_rounded),
+            label: const Text('Voir la facture STEG estimative'),
+          ),
           const SizedBox(height: 12),
           MetricCard(title: 'Estimated monthly bill', value: '${(billing?['totalTnd'] as num? ?? 0).toStringAsFixed(2)} TND', icon: Icons.receipt_long_rounded),
           const SizedBox(height: 12),
@@ -2067,6 +2076,52 @@ class ReportsPage extends StatelessWidget {
           CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Device connectivity', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)), const SizedBox(height: 8), ...deviceHealth.map((item) => ListTile(title: Text(prettyDevice('${item['device']}')), trailing: Text('${item['state']}'.toUpperCase(), style: TextStyle(color: item['state'] == 'online' ? Colors.green : Colors.red, fontWeight: FontWeight.bold))))])),
       ],
     );
+  }
+}
+
+class StegInvoicePage extends StatelessWidget {
+  const StegInvoicePage({super.key, this.billing});
+  final Map<String, dynamic>? billing;
+
+  String money(dynamic value) => '${(value as num? ?? 0).toStringAsFixed(3)} TND';
+
+  Future<void> exportPdf() async {
+    final invoice = billing ?? const <String, dynamic>{};
+    await Printing.layoutPdf(onLayout: (format) async {
+      final document = pw.Document();
+      final rows = [
+        ['Electricite estimee', '${(invoice['projectedKwhMonth'] as num? ?? 0).toStringAsFixed(3)} kWh', '${(invoice['tariffTndPerKwh'] as num? ?? 0).toStringAsFixed(3)} TND/kWh', money(invoice['energyCostTnd'])],
+        ['Redevances fixes', '-', '-', money(invoice['fixedFeesTnd'])],
+        ['TVA (${((invoice['vatRate'] as num? ?? 0) * 100).round()}%)', '-', '-', money(invoice['vatTnd'])],
+      ];
+      document.addPage(pw.Page(pageFormat: PdfPageFormat.a4, build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        pw.Container(color: PdfColor.fromHex('#e5f4f6'), padding: const pw.EdgeInsets.all(18), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [pw.Text('STEG - Societe Tunisienne de l Electricite et du Gaz', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)), pw.Text('Smart House Energy Monitoring - Facture estimative')]),
+        pw.SizedBox(height: 18), pw.Center(child: pw.Text('FACTURE', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold))), pw.SizedBox(height: 18),
+        pw.Text('Reference: ${invoice['reference'] ?? '--'}'), pw.Text('Periode: ${invoice['periodStart'] ?? '--'} au ${invoice['periodEnd'] ?? '--'}'), pw.SizedBox(height: 18),
+        pw.TableHelper.fromTextArray(headers: const ['Consommation et services', 'Quantite', 'Prix', 'Montant'], data: rows, headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold), headerDecoration: pw.BoxDecoration(color: PdfColor.fromInt(0xffe8f4f5))),
+        pw.SizedBox(height: 24), pw.Container(width: double.infinity, padding: const pw.EdgeInsets.all(14), decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.red, width: 2)), child: pw.Text('MONTANT TOTAL: ${money(invoice['totalTnd'])}', style: pw.TextStyle(fontSize: 19, fontWeight: pw.FontWeight.bold, color: PdfColors.red))),
+        pw.SizedBox(height: 16), pw.Text('Estimation basee sur les donnees InfluxDB des dernieres 24h, projetees sur 30 jours. Ce document n est pas une facture STEG officielle.', style: const pw.TextStyle(fontSize: 10)),
+      ])));
+      return document.save();
+    }, name: 'facture_steg_estimation.pdf');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final invoice = billing ?? const <String, dynamic>{};
+    return Scaffold(appBar: AppBar(title: const Text('Facture STEG estimative')), body: ListView(padding: const EdgeInsets.all(16), children: [
+      CardBox(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('STEG', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xff087b54))), const Text('Societe Tunisienne de l Electricite et du Gaz'), const Divider(height: 28),
+        const Center(child: Text('FACTURE', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900))), const SizedBox(height: 14),
+        Text('Reference: ${invoice['reference'] ?? '--'}'), Text('Periode: ${invoice['periodStart'] ?? '--'} au ${invoice['periodEnd'] ?? '--'}'), const SizedBox(height: 16),
+        const Text('Consommation et services', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)), const Divider(),
+        ListTile(title: const Text('Electricite estimee'), subtitle: Text('${(invoice['projectedKwhMonth'] as num? ?? 0).toStringAsFixed(3)} kWh x ${(invoice['tariffTndPerKwh'] as num? ?? 0).toStringAsFixed(3)} TND/kWh'), trailing: Text(money(invoice['energyCostTnd']))),
+        ListTile(title: const Text('Redevances fixes'), trailing: Text(money(invoice['fixedFeesTnd']))), ListTile(title: Text('TVA (${((invoice['vatRate'] as num? ?? 0) * 100).round()}%)'), trailing: Text(money(invoice['vatTnd']))),
+        Container(width: double.infinity, padding: const EdgeInsets.all(16), color: const Color(0xffffeeee), child: Text('MONTANT TOTAL: ${money(invoice['totalTnd'])}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.red))),
+      ])), const SizedBox(height: 16),
+      FilledButton.icon(onPressed: exportPdf, icon: const Icon(Icons.picture_as_pdf_rounded), label: const Text('Telecharger / Imprimer PDF')),
+      const SizedBox(height: 12), const Text('Estimation InfluxDB seulement; ce document n est pas une facture STEG officielle.', textAlign: TextAlign.center),
+    ]));
   }
 }
 

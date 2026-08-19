@@ -14,6 +14,10 @@ async function getEstimate() {
   const energyCostTnd = projectedKwhMonth * tariffTndPerKwh;
   const vatRate = 0.19;
   const vatTnd = energyCostTnd * vatRate;
+  const now = new Date();
+  const periodEnd = now.toISOString().slice(0, 10);
+  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const reference = `EST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}-ENERGY`;
 
   return {
     label: "Estimated monthly electricity cost",
@@ -25,6 +29,10 @@ async function getEstimate() {
     vatRate,
     vatTnd,
     totalTnd: energyCostTnd + vatTnd,
+    periodStart,
+    periodEnd,
+    reference,
+    fixedFeesTnd: 0,
     basedOn: "last_24h_projection",
     updatedAt: new Date().toISOString(),
   };
