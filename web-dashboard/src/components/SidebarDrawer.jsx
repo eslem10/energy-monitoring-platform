@@ -80,6 +80,26 @@ export function SidebarDrawer({ isOpen, onClose, activeTab, onSelectTab, theme, 
             </button>
 
             <button
+              className={`nav-item ${activeTab === "profile" ? "active" : ""}`}
+              onClick={() => {
+                onSelectTab("profile");
+                onClose();
+              }}
+            >
+              <span className="icon">@</span> Profile
+            </button>
+
+            <button
+              className={`nav-item ${activeTab === "invoice" ? "active" : ""}`}
+              onClick={() => {
+                onSelectTab("invoice");
+                onClose();
+              }}
+            >
+              <span className="icon">PDF</span> Facture STEG
+            </button>
+
+            <button
               className="nav-item"
               onClick={() => {
                 onToggleTheme();
